@@ -20,6 +20,9 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.SolutionPersistence" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Compilers\Extension\Roslyn.Compilers.Extension.csproj">
       <Name>CompilerExtension</Name>
       <VSIXSubPath>Vsixes</VSIXSubPath>

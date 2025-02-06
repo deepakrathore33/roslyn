@@ -172,44 +172,54 @@ namespace Microsoft.CodeAnalysis.MSBuild
                 // TryGetAbsoluteSolutionPath should throw before we get here.
                 return null!;
             }
-
+            var isSolutionFilter = SolutionFilterReader.IsSolutionFilterFilename(absoluteSolutionPath);
+            var isSlnxSolution = SlnxSolutionReader.IsSlnxFilename(absoluteSolutionPath);
             var projectFilter = ImmutableHashSet<string>.Empty;
-            if (SolutionFilterReader.IsSolutionFilterFilename(absoluteSolutionPath) &&
+
+            if (isSolutionFilter &&
                 !SolutionFilterReader.TryRead(absoluteSolutionPath, _pathResolver, out absoluteSolutionPath, out projectFilter))
             {
-                throw new Exception(string.Format(WorkspaceMSBuildResources.Failed_to_load_solution_filter_0, solutionFilePath));
+                throw new InvalidOperationException(string.Format(WorkspaceMSBuildResources.Failed_to_load_solution_filter_0, solutionFilePath));
+            }
+
+            if (isSlnxSolution &&
+                !SlnxSolutionReader.TryRead(absoluteSolutionPath, out projectFilter))
+            {
+                throw new InvalidOperationException(string.Format(WorkspaceMSBuildResources.Failed_to_load_slnx_solution_0, solutionFilePath));
             }
 
             using (_dataGuard.DisposableWait(cancellationToken))
             {
-                this.SetSolutionProperties(absoluteSolutionPath);
+                SetSolutionProperties(absoluteSolutionPath);
             }
 
-            var solutionFile = MSB.Construction.SolutionFile.Parse(absoluteSolutionPath);
             var reportingMode = GetReportingModeForUnrecognizedProjects();
-
-            var reportingOptions = new DiagnosticReportingOptions(
-                onPathFailure: reportingMode,
-                onLoaderFailure: reportingMode);
+            var reportingOptions = new DiagnosticReportingOptions(reportingMode, reportingMode);
 
             var projectPaths = ImmutableArray.CreateBuilder<string>();
-
-            // load all the projects
-            foreach (var project in solutionFile.ProjectsInOrder)
+            
+            if (isSolutionFilter)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (project.ProjectType == MSB.Construction.SolutionProjectType.SolutionFolder)
+                var solutionFile = MSB.Construction.SolutionFile.Parse(absoluteSolutionPath);
+                foreach (var project in solutionFile.ProjectsInOrder)
                 {
-                    continue;
-                }
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                // Load project if we have an empty project filter and the project path is present.
-                if (projectFilter.IsEmpty ||
-                    projectFilter.Contains(project.AbsolutePath))
-                {
-                    projectPaths.Add(project.RelativePath);
+                    if (project.ProjectType == MSB.Construction.SolutionProjectType.SolutionFolder)
+                    {
+                        continue;
+                    }
+
+                    if (projectFilter.IsEmpty || projectFilter.Contains(project.AbsolutePath))
+                    {
+                        projectPaths.Add(project.RelativePath);
+                    }
                 }
+            }
+            
+            if (isSlnxSolution)
+            {
+                projectPaths.AddRange(projectFilter);
             }
 
             var buildHostProcessManager = new BuildHostProcessManager(Properties, loggerFactory: _loggerFactory);

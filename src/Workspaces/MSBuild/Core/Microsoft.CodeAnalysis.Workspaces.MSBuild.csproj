@@ -25,6 +25,7 @@
     <PackageReference Include="Microsoft.Build" />
     <PackageReference Include="Microsoft.Build.Tasks.Core" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Microsoft.VisualStudio.SolutionPersistence" />
     <PackageReference Include="Newtonsoft.Json" />
   </ItemGroup>
   <ItemGroup>
@@ -51,7 +52,7 @@
       <Link>InternalUtilities\GlobalAssemblyCache.cs</Link>
     </Compile>
     <Compile Include="..\..\..\Compilers\Shared\NamedPipeUtil.cs" Link="InternalUtilities\NamedPipeUtil.cs" />
-    <Compile Include="..\BuildHost\Rpc\Contracts\*.cs" Link="Rpc\Contracts\%(FileName).cs"/>
+    <Compile Include="..\BuildHost\Rpc\Contracts\*.cs" Link="Rpc\Contracts\%(FileName).cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\BuildHost\Rpc\Readme.md" Link="Rpc\Readme.md" />
@@ -112,12 +113,7 @@
       <!-- We're setting both TargetPath and PackagePath here, the former when this is used in a regular build to deploy and the latter for
            when this called during pack. By putting the PackagePath in any/any, we only have to deploy this once rather than per TFM.
            Similarly, we set CopyToOutputDirectory for the regular build and PackageCopyToPutput for the packaging process. -->
-      <Content Include="%(NetFrameworkBuildHostAssets.Identity)"
-               Condition="'%(NetFrameworkBuildHostAssets.TargetPath)' != '' and '%(NetFrameworkBuildHostAssets.Extension)' != '.xml'"
-               TargetPath="$([System.IO.Path]::Combine('%(NetFrameworkBuildHostAssets.ContentFolderName)', '%(NetFrameworkBuildHostAssets.TargetPath)'))"
-               PackagePath="$([System.IO.Path]::Combine('contentFiles', 'any', 'any', '%(NetFrameworkBuildHostAssets.ContentFolderName)', '%(NetFrameworkBuildHostAssets.TargetPath)'))"
-               CopyToOutputDirectory="PreserveNewest"
-               PackageCopyToOutput="true" />
+      <Content Include="%(NetFrameworkBuildHostAssets.Identity)" Condition="'%(NetFrameworkBuildHostAssets.TargetPath)' != '' and '%(NetFrameworkBuildHostAssets.Extension)' != '.xml'" TargetPath="$([System.IO.Path]::Combine('%(NetFrameworkBuildHostAssets.ContentFolderName)', '%(NetFrameworkBuildHostAssets.TargetPath)'))" PackagePath="$([System.IO.Path]::Combine('contentFiles', 'any', 'any', '%(NetFrameworkBuildHostAssets.ContentFolderName)', '%(NetFrameworkBuildHostAssets.TargetPath)'))" CopyToOutputDirectory="PreserveNewest" PackageCopyToOutput="true" />
     </ItemGroup>
   </Target>
 </Project>
