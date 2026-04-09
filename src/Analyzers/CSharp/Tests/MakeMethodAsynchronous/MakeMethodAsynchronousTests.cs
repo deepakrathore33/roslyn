@@ -1453,4 +1453,296 @@ public sealed partial class MakeMethodAsynchronousTests(ITestOutputHelper logger
                 }
             }
             """, index: 1);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
+    public async Task OverrideVoidMethod_OnlyOffersKeepVoid()
+    {
+        var code = """
+            using System.Threading.Tasks;
+
+            class Base
+            {
+                public virtual void OnAppearing() { }
+            }
+
+            class Derived : Base
+            {
+                public override void OnAppearing()
+                {
+                    [|await|] Task.Delay(1);
+                }
+            }
+            """;
+
+        // Only one code fix should be offered (keep void), not two.
+        await TestActionCountAsync(code, count: 1);
+    }
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
+    public Task OverrideVoidMethod_AddsAsyncKeepsVoid()
+        => TestInRegularAndScriptAsync("""
+            using System.Threading.Tasks;
+
+            class Base
+            {
+                public virtual void OnAppearing() { }
+            }
+
+            class Derived : Base
+            {
+                public override void OnAppearing()
+                {
+                    [|await|] Task.Delay(1);
+                }
+            }
+            """, """
+            using System.Threading.Tasks;
+
+            class Base
+            {
+                public virtual void OnAppearing() { }
+            }
+
+            class Derived : Base
+            {
+                public override async void OnAppearing()
+                {
+                    await Task.Delay(1);
+                }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
+    public Task OverrideVoidMethod_DoesNotRenameWithAsyncSuffix()
+        => TestInRegularAndScriptAsync("""
+            using System.Threading.Tasks;
+
+            class Base
+            {
+                public virtual void M() { }
+            }
+
+            class Derived : Base
+            {
+                public override void M()
+                {
+                    [|await|] Task.Delay(1);
+                }
+            }
+            """, """
+            using System.Threading.Tasks;
+
+            class Base
+            {
+                public virtual void M() { }
+            }
+
+            class Derived : Base
+            {
+                public override async void M()
+                {
+                    await Task.Delay(1);
+                }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
+    public Task OverrideTaskMethod_DoesNotRename()
+        => TestInRegularAndScriptAsync("""
+            using System.Threading.Tasks;
+
+            class Base
+            {
+                public virtual Task M() => Task.CompletedTask;
+            }
+
+            class Derived : Base
+            {
+                public override Task M()
+                {
+                    [|await|] Task.Delay(1);
+                }
+            }
+            """, """
+            using System.Threading.Tasks;
+
+            class Base
+            {
+                public virtual Task M() => Task.CompletedTask;
+            }
+
+            class Derived : Base
+            {
+                public override async Task M()
+                {
+                    await Task.Delay(1);
+                }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
+    public Task InterfaceImplementation_VoidMethod_AddsAsyncKeepsVoid()
+        => TestInRegularAndScriptAsync("""
+            using System;
+            using System.Threading.Tasks;
+
+            interface IHandler
+            {
+                void Handle();
+            }
+
+            class Handler : IHandler
+            {
+                public void Handle()
+                {
+                    [|await|] Task.Delay(1);
+                }
+            }
+            """, """
+            using System;
+            using System.Threading.Tasks;
+
+            interface IHandler
+            {
+                void Handle();
+            }
+
+            class Handler : IHandler
+            {
+                public async void Handle()
+                {
+                    await Task.Delay(1);
+                }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
+    public async Task InterfaceImplementation_VoidMethod_OnlyOffersKeepVoid()
+    {
+        var code = """
+            using System;
+            using System.Threading.Tasks;
+
+            interface IHandler
+            {
+                void Handle();
+            }
+
+            class Handler : IHandler
+            {
+                public void Handle()
+                {
+                    [|await|] Task.Delay(1);
+                }
+            }
+            """;
+
+        await TestActionCountAsync(code, count: 1);
+    }
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
+    public Task ExplicitInterfaceImplementation_VoidMethod_AddsAsyncKeepsVoid()
+        => TestInRegularAndScriptAsync("""
+            using System;
+            using System.Threading.Tasks;
+
+            interface IHandler
+            {
+                void Handle();
+            }
+
+            class Handler : IHandler
+            {
+                void IHandler.Handle()
+                {
+                    [|await|] Task.Delay(1);
+                }
+            }
+            """, """
+            using System;
+            using System.Threading.Tasks;
+
+            interface IHandler
+            {
+                void Handle();
+            }
+
+            class Handler : IHandler
+            {
+                async void IHandler.Handle()
+                {
+                    await Task.Delay(1);
+                }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
+    public Task InterfaceImplementation_TaskMethod_DoesNotRename()
+        => TestInRegularAndScriptAsync("""
+            using System.Threading.Tasks;
+
+            interface IHandler
+            {
+                Task Handle();
+            }
+
+            class Handler : IHandler
+            {
+                public Task Handle()
+                {
+                    [|await|] Task.Delay(1);
+                }
+            }
+            """, """
+            using System.Threading.Tasks;
+
+            interface IHandler
+            {
+                Task Handle();
+            }
+
+            class Handler : IHandler
+            {
+                public async Task Handle()
+                {
+                    await Task.Delay(1);
+                }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
+    public Task OverrideNonVoidNonTaskMethod_DoesNotRename()
+        => TestInRegularAndScriptAsync("""
+            using System.Threading.Tasks;
+
+            class Base
+            {
+                public virtual int M() => 0;
+            }
+
+            class Derived : Base
+            {
+                public override int M()
+                {
+                    [|await|] Task.Delay(1);
+                    return 1;
+                }
+            }
+            """, """
+            using System.Threading.Tasks;
+
+            class Base
+            {
+                public virtual int M() => 0;
+            }
+
+            class Derived : Base
+            {
+                public override async Task<int> M()
+                {
+                    await Task.Delay(1);
+                    return 1;
+                }
+            }
+            """);
 }

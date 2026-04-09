@@ -1,0 +1,17 @@
+{
+  "servers": {
+    "azdo-triage": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/tools/triage-mcp-server/dist/index.js"
+      ],
+      "env": {
+        "AZDO_PAT": "${env:AZDO_PAT}",
+        "AZDO_ORG": "devdiv",
+        "AZDO_PROJECT": "DevDiv",
+        "AZDO_QUERY_ID": "97f5b56b-d39b-4253-afe2-de4e64d8fec9"
+      }
+    }
+  }
+}

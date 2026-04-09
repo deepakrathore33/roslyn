@@ -66,18 +66,14 @@ internal abstract partial class AbstractMakeMethodAsynchronousCodeFixProvider : 
         // Heuristic to recognize the common case for entry point method
         var isEntryPoint = methodSymbol.IsStatic && IsLikelyEntryPointName(methodSymbol.Name, document);
 
-        // Offer to convert to a Task return type.
-        var taskTitle = GetMakeAsyncTaskFunctionResource();
-        context.RegisterCodeFix(
-            CodeAction.Create(
-                taskTitle,
-                cancellationToken => FixNodeAsync(document, diagnostic, keepVoid: false, isEntryPoint, cancellationToken),
-                taskTitle),
-            context.Diagnostics);
+        // Check if this method is an override or interface implementation.  In that case, the return type and
+        // name are dictated by the base/interface member and must not be changed.
+        var isOverrideOrImplementation = IsOverrideOrInterfaceImplementation(methodSymbol);
 
-        // If it's a void returning method (and not an entry point), also offer to keep the void return type
-        if (methodSymbol.IsOrdinaryMethodOrLocalFunction() && methodSymbol.ReturnsVoid && !isEntryPoint)
+        if (isOverrideOrImplementation && methodSymbol.ReturnsVoid)
         {
+            // For void overrides/implementations, only offer the "keep void" option.  Changing the return
+            // type to Task would break the override contract or interface implementation.
             var asyncVoidTitle = GetMakeAsyncVoidFunctionResource();
             context.RegisterCodeFix(
                 CodeAction.Create(
@@ -85,6 +81,29 @@ internal abstract partial class AbstractMakeMethodAsynchronousCodeFixProvider : 
                     cancellationToken => FixNodeAsync(document, diagnostic, keepVoid: true, isEntryPoint: false, cancellationToken),
                     asyncVoidTitle),
                 context.Diagnostics);
+        }
+        else
+        {
+            // Offer to convert to a Task return type.
+            var taskTitle = GetMakeAsyncTaskFunctionResource();
+            context.RegisterCodeFix(
+                CodeAction.Create(
+                    taskTitle,
+                    cancellationToken => FixNodeAsync(document, diagnostic, keepVoid: false, isEntryPoint, cancellationToken),
+                    taskTitle),
+                context.Diagnostics);
+
+            // If it's a void returning method (and not an entry point), also offer to keep the void return type
+            if (methodSymbol.IsOrdinaryMethodOrLocalFunction() && methodSymbol.ReturnsVoid && !isEntryPoint)
+            {
+                var asyncVoidTitle = GetMakeAsyncVoidFunctionResource();
+                context.RegisterCodeFix(
+                    CodeAction.Create(
+                        asyncVoidTitle,
+                        cancellationToken => FixNodeAsync(document, diagnostic, keepVoid: true, isEntryPoint: false, cancellationToken),
+                        asyncVoidTitle),
+                    context.Diagnostics);
+            }
         }
     }
 
@@ -100,6 +119,9 @@ internal abstract partial class AbstractMakeMethodAsynchronousCodeFixProvider : 
         var syntaxFacts = document.GetRequiredLanguageService<ISyntaxFactsService>();
         return syntaxFacts.StringComparer.Equals(name, "Main");
     }
+
+    private static bool IsOverrideOrInterfaceImplementation(IMethodSymbol methodSymbol)
+        => methodSymbol.IsOverride || methodSymbol.ExplicitOrImplicitInterfaceImplementations().Length > 0;
 
     private const string AsyncSuffix = "Async";
 
@@ -138,6 +160,11 @@ internal abstract partial class AbstractMakeMethodAsynchronousCodeFixProvider : 
 
             // We don't need to rename entry point methods
             if (isEntryPoint)
+                return false;
+
+            // We don't need to rename override or interface implementation methods.  Their name is
+            // dictated by the base/interface member.
+            if (IsOverrideOrInterfaceImplementation(methodSymbol))
                 return false;
 
             // Only rename if the return type will change
