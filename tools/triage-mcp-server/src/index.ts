@@ -13,17 +13,26 @@ import { analyzeDump, analyzeEtl } from "./tools/analyze-diagnostics";
 import { getComments } from "./tools/get-comments";
 
 // --- Configuration from environment ---
+const useAzCli = !process.env.AZDO_PAT || process.env.AZDO_AUTH === "azcli";
 const config: AzdoConfig = {
-  pat: process.env.AZDO_PAT ?? "",
+  pat: process.env.AZDO_PAT,
   org: process.env.AZDO_ORG ?? "devdiv",
   project: process.env.AZDO_PROJECT ?? "DevDiv",
   queryId: process.env.AZDO_QUERY_ID,
+  useAzCli,
 };
 
-if (!config.pat) {
-  console.error("ERROR: AZDO_PAT environment variable is required.");
-  console.error("Generate a read-only PAT at https://devdiv.visualstudio.com/_usersSettings/tokens");
+if (!config.pat && !config.useAzCli) {
+  console.error("ERROR: No auth configured. Either:");
+  console.error("  1. Run 'az login' (recommended — auto-renewing)");
+  console.error("  2. Set AZDO_PAT environment variable");
   process.exit(1);
+}
+
+if (config.useAzCli) {
+  console.error("[config] Using az cli bearer token for Azure DevOps auth");
+} else {
+  console.error("[config] Using PAT for Azure DevOps auth");
 }
 
 const client = new AzdoClient(config);

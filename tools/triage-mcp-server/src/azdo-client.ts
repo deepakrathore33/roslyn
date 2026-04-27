@@ -1,31 +1,83 @@
 import fetch from "node-fetch";
 import * as fs from "fs";
 import * as path from "path";
+import { execSync } from "child_process";
 import {
   AzdoConfig, ALLOWED_FIELDS, WiqlResult, WorkItem,
   WorkItemBatchResult, WorkItemWithRelations, WorkItemRelation,
   FILE_TYPE_MAP, DiagnosticFileType, WorkItemComment,
 } from "./types";
 
+/** Azure DevOps resource ID for bearer token requests */
+const AZDO_RESOURCE_ID = "499b84ac-1321-427f-aa17-267ca6975798";
+
 /**
  * Lightweight Azure DevOps REST API client.
- * Read-only — only queries and fetches work items.
+ * Supports two auth modes:
+ * 1. az cli bearer token (preferred — uses your Microsoft login, auto-renews)
+ * 2. PAT (fallback — requires manual token management)
  */
 export class AzdoClient {
   private readonly baseUrl: string;
-  private readonly authHeader: string;
+  private readonly useAzCli: boolean;
+  private readonly patAuthHeader: string | null;
+  private cachedBearerToken: string | null = null;
+  private tokenExpiry: number = 0;
 
   constructor(private readonly config: AzdoConfig) {
     this.baseUrl = `https://dev.azure.com/${config.org}/${config.project}`;
-    const token = Buffer.from(`:${config.pat}`).toString("base64");
-    this.authHeader = `Basic ${token}`;
+    this.useAzCli = config.useAzCli ?? false;
+
+    if (config.pat) {
+      const token = Buffer.from(`:${config.pat}`).toString("base64");
+      this.patAuthHeader = `Basic ${token}`;
+    } else {
+      this.patAuthHeader = null;
+    }
+  }
+
+  /**
+   * Get the authorization header, refreshing the az cli token if needed.
+   */
+  private async getAuthHeader(): Promise<string> {
+    if (!this.useAzCli && this.patAuthHeader) {
+      return this.patAuthHeader;
+    }
+
+    // Check if cached bearer token is still valid (with 5 min buffer)
+    if (this.cachedBearerToken && Date.now() < this.tokenExpiry - 300_000) {
+      return `Bearer ${this.cachedBearerToken}`;
+    }
+
+    // Get fresh token from az cli
+    try {
+      const output = execSync(
+        `az account get-access-token --resource "${AZDO_RESOURCE_ID}" --query "{token:accessToken,expires:expiresOn}" -o json`,
+        { encoding: "utf8", timeout: 15_000 }
+      );
+      const parsed = JSON.parse(output);
+      this.cachedBearerToken = parsed.token;
+      this.tokenExpiry = new Date(parsed.expires).getTime();
+      console.error(`[auth] Got az cli token, expires: ${parsed.expires}`);
+      return `Bearer ${this.cachedBearerToken}`;
+    } catch (err) {
+      if (this.patAuthHeader) {
+        console.error("[auth] az cli token failed, falling back to PAT");
+        return this.patAuthHeader;
+      }
+      throw new Error(
+        "Failed to get Azure DevOps token. Run 'az login' or set AZDO_PAT. " +
+        (err instanceof Error ? err.message : String(err))
+      );
+    }
   }
 
   private async request<T>(url: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
+    const authHeader = await this.getAuthHeader();
     const resp = await fetch(url, {
       method: options.method ?? "GET",
       headers: {
-        Authorization: this.authHeader,
+        Authorization: authHeader,
         "Content-Type": "application/json",
         Accept: "application/json",
       },
@@ -156,9 +208,10 @@ export class AzdoClient {
     const separator = attachmentUrl.includes("?") ? "&" : "?";
     const downloadUrl = `${attachmentUrl}${separator}api-version=7.1&fileName=${encodeURIComponent(fileName)}`;
 
+    const authHeader = await this.getAuthHeader();
     const resp = await fetch(downloadUrl, {
       headers: {
-        Authorization: this.authHeader,
+        Authorization: authHeader,
         Accept: "application/octet-stream",
       },
       redirect: "follow",

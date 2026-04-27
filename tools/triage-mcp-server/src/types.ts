@@ -1,8 +1,10 @@
 export interface AzdoConfig {
-  pat: string;
+  pat?: string;
   org: string;
   project: string;
   queryId?: string;
+  /** If true, use `az cli` to get bearer tokens instead of PAT */
+  useAzCli?: boolean;
 }
 
 export interface WorkItemReference {
