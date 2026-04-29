@@ -58,7 +58,9 @@ export class AzdoClient {
       const parsed = JSON.parse(output);
       this.cachedBearerToken = parsed.token;
       this.tokenExpiry = new Date(parsed.expires).getTime();
-      console.error(`[auth] Got az cli token, expires: ${parsed.expires}`);
+      if (process.env.AZDO_MCP_DEBUG) {
+        console.error(`[auth] Got az cli token, expires: ${parsed.expires}`);
+      }
       return `Bearer ${this.cachedBearerToken}`;
     } catch (err) {
       if (this.patAuthHeader) {
