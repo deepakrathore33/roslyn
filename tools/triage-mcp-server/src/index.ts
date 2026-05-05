@@ -13,9 +13,15 @@ import { analyzeDump, analyzeEtl } from "./tools/analyze-diagnostics";
 import { getComments } from "./tools/get-comments";
 
 // --- Configuration from environment ---
-const useAzCli = !process.env.AZDO_PAT || process.env.AZDO_AUTH === "azcli";
+// AZDO_AUTH=azcli forces az cli mode (and explicitly DISCARDS any AZDO_PAT in
+// env, so an expired user-scope PAT can never silently shadow the az cli token).
+// Otherwise:  PAT if set, else az cli.
+const forceAzCli = process.env.AZDO_AUTH === "azcli";
+const useAzCli = forceAzCli || !process.env.AZDO_PAT;
+const effectivePat = forceAzCli ? undefined : process.env.AZDO_PAT;
+
 const config: AzdoConfig = {
-  pat: process.env.AZDO_PAT,
+  pat: effectivePat,
   org: process.env.AZDO_ORG ?? "devdiv",
   project: process.env.AZDO_PROJECT ?? "DevDiv",
   queryId: process.env.AZDO_QUERY_ID,
@@ -30,7 +36,11 @@ if (!config.pat && !config.useAzCli) {
 }
 
 if (config.useAzCli) {
-  console.error("[config] Using az cli bearer token for Azure DevOps auth");
+  console.error(
+    forceAzCli && process.env.AZDO_PAT
+      ? "[config] Using az cli bearer token for Azure DevOps auth (AZDO_AUTH=azcli; AZDO_PAT in env IGNORED)"
+      : "[config] Using az cli bearer token for Azure DevOps auth",
+  );
 } else {
   console.error("[config] Using PAT for Azure DevOps auth");
 }

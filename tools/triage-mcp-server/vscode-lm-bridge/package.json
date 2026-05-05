@@ -1,0 +1,58 @@
+{
+  "name": "roslyn-triage-lm-bridge",
+  "displayName": "Roslyn Triage LM Bridge",
+  "description": "Exposes vscode.lm (Copilot) chat models to the Roslyn Triage Intel web UI on http://127.0.0.1:5174.",
+  "version": "0.1.0",
+  "publisher": "roslyn-triage",
+  "private": true,
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Roslyn Triage LM Bridge",
+      "properties": {
+        "roslynTriageBridge.port": {
+          "type": "number",
+          "default": 5174,
+          "description": "Localhost port for the bridge HTTP server."
+        },
+        "roslynTriageBridge.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start the bridge automatically when VS Code launches."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "roslynTriageBridge.start",
+        "title": "Triage LM Bridge: Start"
+      },
+      {
+        "command": "roslynTriageBridge.stop",
+        "title": "Triage LM Bridge: Stop"
+      },
+      {
+        "command": "roslynTriageBridge.status",
+        "title": "Triage LM Bridge: Show Status"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -w -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.95.0",
+    "typescript": "^5.4.0"
+  }
+}

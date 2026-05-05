@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Roslyn Triage Intel</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%F0%9F%94%8D%3C/text%3E%3C/svg%3E" />
+</head>
+<body data-theme="dark">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">⌬</span>
+      <div>
+        <h1>Roslyn Triage Intel</h1>
+        <p class="sub">Read-only viewer over <code>azdo-triage</code> MCP tools</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <div class="model-selector" data-bind="model-selector">
+        <button id="model-button" class="model-button" type="button" aria-haspopup="listbox" aria-expanded="false" title="Choose triage model">
+          <span class="model-icon" aria-hidden="true">🧠</span>
+          <span class="model-button-label" id="model-button-label">Heuristic only</span>
+          <span class="model-button-caret" aria-hidden="true">▾</span>
+        </button>
+        <div id="model-menu" class="model-menu" hidden role="listbox" aria-labelledby="model-button"></div>
+      </div>
+      <span id="health-badge" class="badge badge-muted" title="Server status">checking…</span>
+      <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">
+        <span data-theme-icon="dark">🌙</span>
+        <span data-theme-icon="light" hidden>☀️</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card input-card" aria-labelledby="input-heading">
+      <div class="tabs" role="tablist">
+        <button class="tab active" role="tab" data-tab="single" aria-selected="true">
+          Single Item
+        </button>
+        <button class="tab" role="tab" data-tab="batch" aria-selected="false">
+          Batch / Query
+        </button>
+      </div>
+
+      <div class="tab-panel" data-panel="single">
+        <h2 id="input-heading" class="vh">Look up a feedback item</h2>
+        <form id="single-form" class="input-row">
+          <input
+            id="single-input"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Feedback ID (e.g. 1234567) or AzDO / Developer Community URL"
+            aria-label="Feedback ID or URL"
+          />
+          <button class="primary" type="submit">Run triage</button>
+        </form>
+        <p class="hint">
+          Accepts a numeric ID, an AzDO link
+          (<code>…/_workitems/edit/&lt;id&gt;</code>), or a Developer Community link.
+        </p>
+      </div>
+
+      <div class="tab-panel" data-panel="batch" hidden>
+        <form id="batch-form" class="input-grid">
+          <label class="field">
+            <span>Query ID or URL</span>
+            <input id="batch-query" type="text" placeholder="GUID or query URL — leave blank to use server default" />
+          </label>
+          <label class="field">
+            <span>OR comma-separated IDs</span>
+            <input id="batch-ids" type="text" placeholder="1234, 5678, 9012" />
+          </label>
+          <label class="field full">
+            <span>OR custom WIQL</span>
+            <textarea id="batch-wiql" rows="3" placeholder="SELECT [System.Id], [System.Title] FROM workitems WHERE …"></textarea>
+          </label>
+          <label class="field small">
+            <span>Max items</span>
+            <input id="batch-max" type="number" min="1" max="50" value="25" />
+          </label>
+          <div class="batch-actions">
+            <button class="primary" type="submit">Fetch list</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="status" class="status" hidden></section>
+    <section id="pipeline" class="pipeline" hidden aria-live="polite"></section>
+    <section id="results" class="results" aria-live="polite"></section>
+  </main>
+
+  <footer class="footer">
+    <span>PII scrubbed by <code>filters/pii-scrubber.ts</code> · Field-allowlisted</span>
+    <span>·</span>
+    <a href="https://github.com/dotnet/roslyn" target="_blank" rel="noreferrer noopener">dotnet/roslyn</a>
+  </footer>
+
+  <template id="tpl-pipeline">
+    <article class="card pipeline-card">
+      <header class="pipeline-head">
+        <div>
+          <h3 data-bind="title">Triaging…</h3>
+          <p class="pipeline-sub" data-bind="sub"></p>
+        </div>
+        <span class="badge" data-bind="overall">running</span>
+      </header>
+      <ol class="pipeline-steps" data-bind="steps"></ol>
+    </article>
+  </template>
+
+  <template id="tpl-step">
+    <li class="step" data-step="">
+      <span class="step-marker"><span class="step-spinner"></span></span>
+      <div class="step-body">
+        <div class="step-row">
+          <span class="step-label" data-bind="label"></span>
+          <span class="step-mode" data-bind="mode" hidden></span>
+          <span class="step-elapsed" data-bind="elapsed"></span>
+        </div>
+        <div class="step-detail" data-bind="detail"></div>
+        <pre class="step-stream" data-bind="stream" hidden></pre>
+      </div>
+    </li>
+  </template>
+
+  <template id="tpl-report">
+    <article class="card report">
+      <header class="report-head">
+        <div class="detail-title-row">
+          <span class="badge badge-id" data-bind="id"></span>
+          <h2 data-bind="title"></h2>
+        </div>
+        <div class="detail-links">
+          <a class="link-btn" data-bind-href="azdoLink" target="_blank" rel="noreferrer noopener">Open in AzDO ↗</a>
+          <a class="link-btn ghost" data-bind-href="devCommunityLink" data-hide-if-empty target="_blank" rel="noreferrer noopener">Developer Community ↗</a>
+        </div>
+        <div class="badge-row" data-bind="badges"></div>
+      </header>
+
+      <details class="section" open>
+        <summary>📝 Summary</summary>
+        <div class="prose" data-bind="summary"></div>
+        <div class="ea-grid" data-bind="expectedActual"></div>
+      </details>
+
+      <details class="section" open>
+        <summary>🎯 Classification <span class="count" data-bind="classifConfidence"></span></summary>
+        <div class="classif" data-bind="classification"></div>
+      </details>
+
+      <details class="section" open>
+        <summary>🧬 Possible duplicates <span class="count" data-bind="dupCount"></span></summary>
+        <div class="dup-list" data-bind="duplicates"></div>
+      </details>
+
+      <details class="section">
+        <summary>🧠 Root cause hints <span class="count" data-bind="rcStatus"></span></summary>
+        <div class="root-cause" data-bind="rootCause"></div>
+      </details>
+
+      <details class="section">
+        <summary>📂 Related code paths <span class="count" data-bind="codeCount"></span></summary>
+        <div class="code-list" data-bind="codePaths"></div>
+      </details>
+
+      <details class="section">
+        <summary>🔀 Related PRs &amp; commits <span class="count" data-bind="prCount"></span></summary>
+        <div class="pr-list" data-bind="pullRequests"></div>
+      </details>
+    </article>
+  </template>
+
+  <template id="tpl-list-row">
+    <button class="list-row" type="button">
+      <span class="badge badge-id" data-bind="id"></span>
+      <span class="list-title" data-bind="title"></span>
+      <span class="list-badges" data-bind="badges"></span>
+    </button>
+  </template>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>

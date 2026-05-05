@@ -63,12 +63,15 @@ export class AzdoClient {
       }
       return `Bearer ${this.cachedBearerToken}`;
     } catch (err) {
-      if (this.patAuthHeader) {
+      // Only fall back to PAT if the caller did NOT explicitly request az cli mode.
+      // When useAzCli is true, falling back to a stale PAT silently produces 401s
+      // which are very hard to diagnose — fail loudly instead.
+      if (this.patAuthHeader && !this.useAzCli) {
         console.error("[auth] az cli token failed, falling back to PAT");
         return this.patAuthHeader;
       }
       throw new Error(
-        "Failed to get Azure DevOps token. Run 'az login' or set AZDO_PAT. " +
+        "Failed to get Azure DevOps token via az cli. Run 'az login' (recommended) or set AZDO_PAT and unset AZDO_AUTH=azcli. " +
         (err instanceof Error ? err.message : String(err))
       );
     }
