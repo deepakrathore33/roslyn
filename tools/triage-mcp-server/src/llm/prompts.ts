@@ -3,6 +3,8 @@
  *
  * Kept short on purpose: every byte goes over the wire and counts toward
  * latency/cost. Outputs are constrained so heuristics can fall back cleanly.
+ * 
+ * fdjsfl
  */
 
 export const SYSTEM_BASE = [
