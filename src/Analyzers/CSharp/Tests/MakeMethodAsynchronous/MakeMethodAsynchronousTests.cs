@@ -23,7 +23,7 @@ public sealed partial class MakeMethodAsynchronousTests(ITestOutputHelper logger
         => (null, new CSharpMakeMethodAsynchronousCodeFixProvider());
 
     [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/33082")]
-    public Task AwaitInVoidMethodWithModifiers()
+    public Task AwaitInVoidMethodWithModifiers_AsyncVoid()
         => TestInRegularAndScriptAsync("""
             using System;
             using System.Threading.Tasks;
@@ -47,6 +47,512 @@ public sealed partial class MakeMethodAsynchronousTests(ITestOutputHelper logger
                 }
             }
             """, index: 1);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    public async Task AwaitInEventHandlerMethod()
+    {
+        var initial =
+            """
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private event EventHandler Click;
+
+                private void OnClick(object sender, EventArgs e)
+                {
+                    [|await Task.Delay(1);|]
+                }
+
+                private void Hookup()
+                {
+                    Click += OnClick;
+                }
+            }
+            """;
+
+        await TestActionCountAsync(initial, count: 2);
+        await TestInRegularAndScriptAsync(initial, """
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private event EventHandler Click;
+
+                {|Warning:private async Task OnClickAsync(object sender, EventArgs e)
+                {
+                    await Task.Delay(1);
+                }|}
+
+                private void Hookup()
+                {
+                    Click += OnClickAsync;
+                }
+            }
+            """);
+    }
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    public Task AwaitInEventHandlerMethod_AsyncVoidFixIsStillOffered()
+        => TestInRegularAndScriptAsync("""
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private event EventHandler Click;
+
+                private void OnClick(object sender, EventArgs e)
+                {
+                    [|await Task.Delay(1);|]
+                }
+
+                private void Hookup()
+                {
+                    Click += OnClick;
+                }
+            }
+            """, """
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private event EventHandler Click;
+
+                private async void OnClick(object sender, EventArgs e)
+                {
+                    await Task.Delay(1);
+                }
+
+                private void Hookup()
+                {
+                    Click += OnClick;
+                }
+            }
+            """, index: 1);
+
+    [Theory, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    [InlineData("Click += OnClick;")]
+    [InlineData("Click -= OnClick;")]
+    [InlineData("Click += this.OnClick;")]
+    public Task AwaitInEventHandlerMethod_OffersTaskFixFirst(string eventReference)
+        => TestExactActionSetOfferedAsync($$"""
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private event EventHandler Click;
+
+                private void OnClick(object sender, EventArgs e)
+                {
+                    [||]await Task.Delay(1);
+                }
+
+                private void Hookup()
+                {
+                    {{eventReference}}
+                }
+            }
+            """,
+            [CSharpCodeFixesResources.Make_method_async, CSharpCodeFixesResources.Make_method_async_remain_void]);
+
+    [Theory, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    [InlineData("DoWork();", "")]
+    [InlineData("Action a = DoWork;", "")]
+    [InlineData("Register(DoWork);", "void Register(Action action) { }")]
+    public Task AwaitInMethodReferencedVariousWays_AlwaysOffersBothFixes(string reference, string helperMember)
+        => TestExactActionSetOfferedAsync($$"""
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private void DoWork()
+                {
+                    [||]await Task.Delay(1);
+                }
+
+                private void Use()
+                {
+                    {{reference}}
+                }
+
+                {{helperMember}}
+            }
+            """,
+            [CSharpCodeFixesResources.Make_method_async, CSharpCodeFixesResources.Make_method_async_remain_void]);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    public Task AwaitInMethodAssignedToDelegateVariable_Warns()
+        => TestInRegularAndScriptAsync("""
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private void DoWork()
+                {
+                    [|await Task.Delay(1);|]
+                }
+
+                private void Hookup()
+                {
+                    Action a = DoWork;
+                }
+            }
+            """, """
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                {|Warning:private async Task DoWorkAsync()
+                {
+                    await Task.Delay(1);
+                }|}
+
+                private void Hookup()
+                {
+                    Action a = DoWorkAsync;
+                }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    public Task AwaitInMethodPassedAsDelegateArgument_Warns()
+        => TestInRegularAndScriptAsync("""
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private void DoWork()
+                {
+                    [|await Task.Delay(1);|]
+                }
+
+                private void Hookup()
+                {
+                    Register(DoWork);
+                }
+
+                private void Register(Action action) { }
+            }
+            """, """
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                {|Warning:private async Task DoWorkAsync()
+                {
+                    await Task.Delay(1);
+                }|}
+
+                private void Hookup()
+                {
+                    Register(DoWorkAsync);
+                }
+
+                private void Register(Action action) { }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    public Task AwaitInMethodConvertedViaExplicitDelegateCreation_Warns()
+        => TestInRegularAndScriptAsync("""
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private void DoWork()
+                {
+                    [|await Task.Delay(1);|]
+                }
+
+                private void Hookup()
+                {
+                    var a = new Action(DoWork);
+                }
+            }
+            """, """
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                {|Warning:private async Task DoWorkAsync()
+                {
+                    await Task.Delay(1);
+                }|}
+
+                private void Hookup()
+                {
+                    var a = new Action(DoWorkAsync);
+                }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    public Task AwaitInMethodInvokedDirectly_NoWarning()
+        => TestInRegularAndScriptAsync("""
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private void DoWork()
+                {
+                    [|await Task.Delay(1);|]
+                }
+
+                private void Use()
+                {
+                    DoWork();
+                }
+            }
+            """, """
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private async Task DoWorkAsync()
+                {
+                    await Task.Delay(1);
+                }
+
+                private void Use()
+                {
+                    DoWorkAsync();
+                }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    public Task AwaitInMethodCalledInsideLambdaConvertedToDelegate_NoWarning()
+        => TestInRegularAndScriptAsync("""
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private void DoWork()
+                {
+                    [|await Task.Delay(1);|]
+                }
+
+                private void Hookup()
+                {
+                    var a = (Action)(() => { DoWork(); });
+                }
+            }
+            """, """
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private async Task DoWorkAsync()
+                {
+                    await Task.Delay(1);
+                }
+
+                private void Hookup()
+                {
+                    var a = (Action)(() => { DoWorkAsync(); });
+                }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    public Task AwaitInMethodCalledInsideLocalFunctionConvertedToDelegate_NoWarning()
+        => TestInRegularAndScriptAsync("""
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private void DoWork()
+                {
+                    [|await Task.Delay(1);|]
+                }
+
+                private void Hookup()
+                {
+                    void Wrapper()
+                    {
+                        DoWork();
+                    }
+
+                    var a = (Action)Wrapper;
+                }
+            }
+            """, """
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private async Task DoWorkAsync()
+                {
+                    await Task.Delay(1);
+                }
+
+                private void Hookup()
+                {
+                    void Wrapper()
+                    {
+                        DoWorkAsync();
+                    }
+
+                    var a = (Action)Wrapper;
+                }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    public Task AwaitInNonVoidMethodUsedAsDelegate_Warns()
+        => TestInRegularAndScriptAsync("""
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private int GetValue()
+                {
+                    [|await Task.Delay(1);|]
+                    return 1;
+                }
+
+                private void Hookup()
+                {
+                    Func<int> f = GetValue;
+                }
+            }
+            """, """
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                {|Warning:private async Task<int> GetValueAsync()
+                {
+                    await Task.Delay(1);
+                    return 1;
+                }|}
+
+                private void Hookup()
+                {
+                    Func<int> f = GetValueAsync;
+                }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    public Task AwaitInTaskReturningMethodUsedAsDelegate_NoWarning()
+        => TestInRegularAndScriptAsync("""
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private Task DoWork()
+                {
+                    [|await Task.Delay(1);|]
+                }
+
+                private void Hookup()
+                {
+                    Func<Task> f = DoWork;
+                }
+            }
+            """, """
+            using System;
+            using System.Threading.Tasks;
+
+            class C
+            {
+                private async Task DoWork()
+                {
+                    await Task.Delay(1);
+                }
+
+                private void Hookup()
+                {
+                    Func<Task> f = DoWork;
+                }
+            }
+            """);
+
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    public Task AwaitInEventHandlerMethod_RegisteredInSeparateDocument_StillWarns()
+        => TestInRegularAndScriptAsync("""
+            <Workspace>
+                <Project Language="C#" AssemblyName="Assembly1" CommonReferences="true">
+                    <Document FilePath="Handler.cs">
+            using System;
+            using System.Threading.Tasks;
+
+            public class C
+            {
+                public void OnClick(object sender, EventArgs e)
+                {
+                    [|await Task.Delay(1);|]
+                }
+            }
+                    </Document>
+                    <Document FilePath="Wireup.cs">
+            using System;
+
+            public class D
+            {
+                public event EventHandler Click;
+
+                public void Hookup(C c)
+                {
+                    Click += c.OnClick;
+                }
+            }
+                    </Document>
+                </Project>
+            </Workspace>
+            """, """
+            <Workspace>
+                <Project Language="C#" AssemblyName="Assembly1" CommonReferences="true">
+                    <Document FilePath="Handler.cs">
+            using System;
+            using System.Threading.Tasks;
+
+            public class C
+            {
+                {|Warning:public async Task OnClickAsync(object sender, EventArgs e)
+                {
+                    await Task.Delay(1);
+                }|}
+            }
+                    </Document>
+                    <Document FilePath="Wireup.cs">
+            using System;
+
+            public class D
+            {
+                public event EventHandler Click;
+
+                public void Hookup(C c)
+                {
+                    Click += c.OnClickAsync;
+                }
+            }
+                    </Document>
+                </Project>
+            </Workspace>
+            """);
 
     [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/26312")]
     public async Task AwaitInTaskMainMethodWithModifiers()
@@ -110,7 +616,7 @@ public sealed partial class MakeMethodAsynchronousTests(ITestOutputHelper logger
             """, index: 1);
 
     [Fact]
-    public Task AwaitInVoidMethodWithModifiers2()
+    public Task AwaitInVoidMethodWithModifiers_AsyncTask()
         => TestInRegularAndScriptAsync("""
             using System;
             using System.Threading.Tasks;
@@ -1454,294 +1960,91 @@ public sealed partial class MakeMethodAsynchronousTests(ITestOutputHelper logger
             }
             """, index: 1);
 
-    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
-    public async Task OverrideVoidMethod_OnlyOffersKeepVoid()
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    public async Task PartialMethodAsEventHandlerWithTaskConversion()
     {
-        var code = """
+        var initial = """
+            using System;
             using System.Threading.Tasks;
 
-            class Base
+            public partial class C
             {
-                public virtual void OnAppearing() { }
-            }
+                private event EventHandler Click;
 
-            class Derived : Base
-            {
-                public override void OnAppearing()
+                public partial void OnClick(object sender, EventArgs e);
+
+                public partial void OnClick(object sender, EventArgs e)
                 {
-                    [|await|] Task.Delay(1);
+                    [|await Task.Delay(1);|]
+                }
+
+                private void Hookup()
+                {
+                    Click += OnClick;
                 }
             }
             """;
 
-        // Only one code fix should be offered (keep void), not two.
-        await TestActionCountAsync(code, count: 1);
+        await TestActionCountAsync(initial, count: 2);
+        await TestInRegularAndScriptAsync(initial, """
+            using System;
+            using System.Threading.Tasks;
+
+            public partial class C
+            {
+                private event EventHandler Click;
+
+                public partial Task OnClickAsync(object sender, EventArgs e);
+
+                {|Warning:public async partial Task OnClickAsync(object sender, EventArgs e)
+                {
+                    await Task.Delay(1);
+                }|}
+
+                private void Hookup()
+                {
+                    Click += OnClickAsync;
+                }
+            }
+            """);
     }
 
-    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
-    public Task OverrideVoidMethod_AddsAsyncKeepsVoid()
-        => TestInRegularAndScriptAsync("""
-            using System.Threading.Tasks;
-
-            class Base
-            {
-                public virtual void OnAppearing() { }
-            }
-
-            class Derived : Base
-            {
-                public override void OnAppearing()
-                {
-                    [|await|] Task.Delay(1);
-                }
-            }
-            """, """
-            using System.Threading.Tasks;
-
-            class Base
-            {
-                public virtual void OnAppearing() { }
-            }
-
-            class Derived : Base
-            {
-                public override async void OnAppearing()
-                {
-                    await Task.Delay(1);
-                }
-            }
-            """);
-
-    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
-    public Task OverrideVoidMethod_DoesNotRenameWithAsyncSuffix()
-        => TestInRegularAndScriptAsync("""
-            using System.Threading.Tasks;
-
-            class Base
-            {
-                public virtual void M() { }
-            }
-
-            class Derived : Base
-            {
-                public override void M()
-                {
-                    [|await|] Task.Delay(1);
-                }
-            }
-            """, """
-            using System.Threading.Tasks;
-
-            class Base
-            {
-                public virtual void M() { }
-            }
-
-            class Derived : Base
-            {
-                public override async void M()
-                {
-                    await Task.Delay(1);
-                }
-            }
-            """);
-
-    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
-    public Task OverrideTaskMethod_DoesNotRename()
-        => TestInRegularAndScriptAsync("""
-            using System.Threading.Tasks;
-
-            class Base
-            {
-                public virtual Task M() => Task.CompletedTask;
-            }
-
-            class Derived : Base
-            {
-                public override Task M()
-                {
-                    [|await|] Task.Delay(1);
-                }
-            }
-            """, """
-            using System.Threading.Tasks;
-
-            class Base
-            {
-                public virtual Task M() => Task.CompletedTask;
-            }
-
-            class Derived : Base
-            {
-                public override async Task M()
-                {
-                    await Task.Delay(1);
-                }
-            }
-            """);
-
-    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
-    public Task InterfaceImplementation_VoidMethod_AddsAsyncKeepsVoid()
+    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82471")]
+    public Task PartialMethodUsedAsDelegateVariable_Warns()
         => TestInRegularAndScriptAsync("""
             using System;
             using System.Threading.Tasks;
 
-            interface IHandler
+            public partial class C
             {
-                void Handle();
-            }
+                public partial void DoWork();
 
-            class Handler : IHandler
-            {
-                public void Handle()
+                public partial void DoWork()
                 {
-                    [|await|] Task.Delay(1);
+                    [|await Task.Delay(1);|]
+                }
+
+                private void Use()
+                {
+                    Action a = DoWork;
                 }
             }
             """, """
             using System;
             using System.Threading.Tasks;
 
-            interface IHandler
+            public partial class C
             {
-                void Handle();
-            }
+                public partial Task DoWorkAsync();
 
-            class Handler : IHandler
-            {
-                public async void Handle()
+                {|Warning:public async partial Task DoWorkAsync()
                 {
                     await Task.Delay(1);
-                }
-            }
-            """);
+                }|}
 
-    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
-    public async Task InterfaceImplementation_VoidMethod_OnlyOffersKeepVoid()
-    {
-        var code = """
-            using System;
-            using System.Threading.Tasks;
-
-            interface IHandler
-            {
-                void Handle();
-            }
-
-            class Handler : IHandler
-            {
-                public void Handle()
+                private void Use()
                 {
-                    [|await|] Task.Delay(1);
-                }
-            }
-            """;
-
-        await TestActionCountAsync(code, count: 1);
-    }
-
-    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
-    public Task ExplicitInterfaceImplementation_VoidMethod_AddsAsyncKeepsVoid()
-        => TestInRegularAndScriptAsync("""
-            using System;
-            using System.Threading.Tasks;
-
-            interface IHandler
-            {
-                void Handle();
-            }
-
-            class Handler : IHandler
-            {
-                void IHandler.Handle()
-                {
-                    [|await|] Task.Delay(1);
-                }
-            }
-            """, """
-            using System;
-            using System.Threading.Tasks;
-
-            interface IHandler
-            {
-                void Handle();
-            }
-
-            class Handler : IHandler
-            {
-                async void IHandler.Handle()
-                {
-                    await Task.Delay(1);
-                }
-            }
-            """);
-
-    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
-    public Task InterfaceImplementation_TaskMethod_DoesNotRename()
-        => TestInRegularAndScriptAsync("""
-            using System.Threading.Tasks;
-
-            interface IHandler
-            {
-                Task Handle();
-            }
-
-            class Handler : IHandler
-            {
-                public Task Handle()
-                {
-                    [|await|] Task.Delay(1);
-                }
-            }
-            """, """
-            using System.Threading.Tasks;
-
-            interface IHandler
-            {
-                Task Handle();
-            }
-
-            class Handler : IHandler
-            {
-                public async Task Handle()
-                {
-                    await Task.Delay(1);
-                }
-            }
-            """);
-
-    [Fact, WorkItem("https://github.com/dotnet/roslyn/issues/82414")]
-    public Task OverrideNonVoidNonTaskMethod_DoesNotRename()
-        => TestInRegularAndScriptAsync("""
-            using System.Threading.Tasks;
-
-            class Base
-            {
-                public virtual int M() => 0;
-            }
-
-            class Derived : Base
-            {
-                public override int M()
-                {
-                    [|await|] Task.Delay(1);
-                    return 1;
-                }
-            }
-            """, """
-            using System.Threading.Tasks;
-
-            class Base
-            {
-                public virtual int M() => 0;
-            }
-
-            class Derived : Base
-            {
-                public override async Task<int> M()
-                {
-                    await Task.Delay(1);
-                    return 1;
+                    Action a = DoWorkAsync;
                 }
             }
             """);
