@@ -59,7 +59,38 @@ export const ALLOWED_FIELDS = [
   "Microsoft.DevDiv.OS",
   "Microsoft.DevDiv.Votes",
   "Microsoft.DevDiv.Score",
+  "Microsoft.DevDiv.BuildNumber",
+  "Microsoft.DevDiv.Regression",
+  "Microsoft.DevDiv.OpenedBranch",
+  "Microsoft.DevDiv.ChannelId",
+  "Microsoft.DevDiv.OSLang",
+  "Microsoft.DevDiv.UserType",
+  "Microsoft.DevDiv.PostDate",
+  "Microsoft.DevDiv.LastMicrosoftActivityDate",
+  "Microsoft.DevDiv.AllTags",
+  "System.CommentCount",
 ] as const;
+
+/** AI-generated analysis from the Developer Community backend (read-only endpoints). */
+export interface DevComAiResult {
+  devComId: number;
+  summary?: { text: string | null; date?: string; error?: string | null };
+  logAnalysis?: {
+    text: string | null;
+    generatedAt?: string;
+    sources: Array<{ fileName: string; processor?: string }>;
+    error?: string | null;
+  };
+  aiGuidance?: { needsMoreInfo: boolean; askMarkdown?: string };
+  similarIssues?: Array<{
+    score: number;
+    title: string;
+    state: string;
+    azdoUrl?: string;
+    tags: string[];
+  }>;
+  errors: string[];
+}
 
 /** Comment from Azure DevOps Comments API */
 export interface WorkItemComment {

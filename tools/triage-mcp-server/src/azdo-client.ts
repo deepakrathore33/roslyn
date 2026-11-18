@@ -271,6 +271,22 @@ export class AzdoClient {
   }
 
   /**
+   * Read-only GET against the Developer Community backend used by the
+   * "Developer Community" work item form. Never passes regen=true, so cached
+   * AI output is returned and nothing is regenerated or rewritten.
+   */
+  async getDevComJson<T>(pathAndQuery: string): Promise<T> {
+    const base = process.env.DEVCOM_API_BASE ?? "https://sendvsfeedback2.azurewebsites.net";
+    const resp = await fetch(`${base}${pathAndQuery}`, {
+      headers: { Authorization: await this.getAuthHeader(), Accept: "application/json" },
+    });
+    if (!resp.ok) {
+      throw new Error(`Developer Community API error ${resp.status} for ${pathAndQuery.split("?")[0]}`);
+    }
+    return resp.json() as Promise<T>;
+  }
+
+  /**
    * Get a work item with ALL available data for triage:
    * metadata fields, comments, and developer community info.
    */

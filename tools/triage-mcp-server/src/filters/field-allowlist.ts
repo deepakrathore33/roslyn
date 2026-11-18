@@ -6,6 +6,7 @@ const TEXT_FIELDS = new Set([
   "System.Title",
   "System.Description",
   "Microsoft.VSTS.TCM.ReproSteps",
+  "Microsoft.DevDiv.AllTags",
 ]);
 
 /**

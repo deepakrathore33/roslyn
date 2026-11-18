@@ -11,6 +11,7 @@ import { downloadAttachment } from "./tools/download-attachment";
 import { downloadDiagnostics } from "./tools/download-diagnostics";
 import { analyzeDump, analyzeEtl } from "./tools/analyze-diagnostics";
 import { getComments } from "./tools/get-comments";
+import { getDevComAi } from "./tools/get-devcom-ai";
 
 // --- Configuration from environment ---
 // AZDO_AUTH=azcli forces az cli mode (and explicitly DISCARDS any AZDO_PAT in
@@ -214,6 +215,29 @@ server.tool(
             }, null, 2),
           },
         ],
+      };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        content: [{ type: "text" as const, text: `Error: ${message}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// Tool: get_devcom_ai
+server.tool(
+  "get_devcom_ai",
+  "Fetch the AI Summary, AI Log Analysis (Beta), AI 'more info' guidance and similar issues shown on the Developer Community form of a work item, plus the full text of the newest vs-skill-analysis-*.md attachment. Read-only (cached results only, never regenerates). PII is scrubbed.",
+  {
+    id: z.number().describe("The Azure DevOps work item ID."),
+  },
+  async (args) => {
+    try {
+      const result = await getDevComAi(client, { id: args.id });
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
       };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
